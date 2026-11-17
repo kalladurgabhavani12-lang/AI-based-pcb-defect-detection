@@ -1,0 +1,90 @@
+import time
+import cv2
+import numpy as np
+import streamlit as st
+import tensorflow as tf
+from PIL import Image
+
+# Page Configuration
+st.set_page_config(page_title="AI-Based PCB Defect Detection", layout="wide")
+
+CLASSES = ["Missing_hole", "Mouse_bite", "Open_circuit", "Short", "Spur", "Spurious_copper"]
+IMG_SIZE = 224
+
+DEFECT_INFO = {
+    "Missing_hole": "A required drill hole/via is absent on the PCB substrate.",
+    "Mouse_bite": "Small indentations along the edge of a copper trace caused by improper depaneling.",
+    "Open_circuit": "A break or gap in a conductive copper trace preventing electrical continuity.",
+    "Short": "Unintended copper bridge connecting two adjacent conductive tracks.",
+    "Spur": "Unwanted sharp copper protrusion extending from a trace.",
+    "Spurious_copper": "Isolated patch of excess copper left behind during the etching process."
+}
+
+@st.cache_resource
+def load_trained_model():
+    return tf.keras.models.load_model("pcb_defect_cnn.h5")
+
+def preprocess_image(pil_image):
+    img = np.array(pil_image.convert("RGB"))
+    # Apply identical preprocessing used during training
+    denoised = cv2.GaussianBlur(img, (3, 3), 0)
+    resized = cv2.resize(denoised, (IMG_SIZE, IMG_SIZE))
+    normalized = resized.astype("float32") / 255.0
+    return np.expand_dims(normalized, axis=0), denoised
+
+# Header Section
+st.title("🔍 AI-Based PCB Defect Detection System")
+st.markdown("**Automated Visual Inspection & Real-Time Defect Classification using Convolutional Neural Networks (CNN)**")
+st.divider()
+
+# Sidebar Info
+st.sidebar.header("Project Details")
+st.sidebar.write("**Department:** Electronics & Communication Engineering")
+st.sidebar.write("**Institute:** Dadi Institute of Engineering & Technology")
+st.sidebar.subheader("Detectable Defect Classes")
+for c in CLASSES:
+    st.sidebar.markdown(f"- `{c.replace('_', ' ')}`")
+
+# Load Model
+try:
+    model = load_trained_model()
+except Exception as e:
+    st.error("Model file `pcb_defect_cnn.h5` not found! Please run `python train_pcb_model.py` first.")
+    st.stop()
+
+# Upload Image Section
+uploaded_file = st.file_uploader("Upload a PCB Image for Inspection (JPG / PNG)", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    
+    # Run Preprocessing & Inference
+    start_time = time.time()
+    input_tensor, processed_preview = preprocess_image(image)
+    predictions = model.predict(input_tensor)[0]
+    inference_time_ms = (time.time() - start_time) * 1000
+    
+    predicted_idx = np.argmax(predictions)
+    predicted_class = CLASSES[predicted_idx]
+    confidence = predictions[predicted_idx] * 100
+
+    # Display Results in Two Columns
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Uploaded PCB Image")
+        st.image(image, use_container_width=True)
+        
+    with col2:
+        st.subheader("Inspection Diagnostics")
+        st.error(f"**Detected Defect:** {predicted_class.replace('_', ' ')}")
+        
+        m1, m2 = st.columns(2)
+        m1.metric("Confidence Score", f"{confidence:.2f}%")
+        m2.metric("Inference Time", f"{inference_time_ms:.1f} ms")
+        
+        st.info(f"**Description:** {DEFECT_INFO[predicted_class]}")
+        
+        st.subheader("Class Probability Breakdown")
+        prob_dict = {CLASSES[i].replace('_', ' '): float(predictions[i]) for i in range(len(CLASSES))}
+        st.bar_chart(prob_dict)
