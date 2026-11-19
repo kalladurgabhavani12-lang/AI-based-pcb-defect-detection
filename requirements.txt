@@ -1,7 +1,5 @@
-tensorflow
-opencv-python
+ultralytics
+opencv-python-headless
 numpy
-matplotlib
-scikit-learn
 streamlit
 pillow
