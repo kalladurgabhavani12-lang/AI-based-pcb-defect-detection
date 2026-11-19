@@ -1,8 +1,7 @@
 import time
-import cv2
 import numpy as np
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageFilter
 from ultralytics import YOLO
 
 st.set_page_config(page_title="AI-Based PCB Defect Detection (YOLOv8)", layout="wide")
@@ -33,24 +32,24 @@ conf_threshold = st.sidebar.slider("Detection Confidence Threshold", 0.10, 0.90,
 try:
     model = load_yolo_model()
 except Exception:
-    st.error("Model file `best_pcb_yolo.pt` not found! Train your YOLOv8 model first and upload `best_pcb_yolo.pt` to GitHub.")
+    st.error("Model file `best_pcb_yolo.pt` not found! Please upload `best_pcb_yolo.pt` to your GitHub repository.")
     st.stop()
 
 uploaded_file = st.file_uploader("Upload a PCB Image for Defect Detection (JPG / PNG)", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
-    img_np = np.array(image)
 
-    # Noise removal preprocessing before YOLOv8 inference
-    denoised_img = cv2.GaussianBlur(img_np, (3, 3), 0)
+    # Noise removal preprocessing using Gaussian Blur before YOLOv8 inference
+    denoised_pil = image.filter(ImageFilter.GaussianBlur(radius=1))
+    denoised_np = np.array(denoised_pil)
 
     start_time = time.time()
-    results = model.predict(source=denoised_img, conf=conf_threshold)
+    results = model.predict(source=denoised_np, conf=conf_threshold)
     inference_ms = (time.time() - start_time) * 1000
 
-    annotated_bgr = results[0].plot()
-    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
+    # Convert BGR plot output to RGB
+    annotated_rgb = results[0].plot()[:, :, ::-1]
 
     col1, col2 = st.columns(2)
     with col1:
