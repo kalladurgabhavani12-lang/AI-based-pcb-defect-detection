@@ -2,89 +2,78 @@ import time
 import cv2
 import numpy as np
 import streamlit as st
-import tensorflow as tf
 from PIL import Image
+from ultralytics import YOLO
 
-# Page Configuration
-st.set_page_config(page_title="AI-Based PCB Defect Detection", layout="wide")
-
-CLASSES = ["Missing_hole", "Mouse_bite", "Open_circuit", "Short", "Spur", "Spurious_copper"]
-IMG_SIZE = 224
+st.set_page_config(page_title="AI-Based PCB Defect Detection (YOLOv8)", layout="wide")
 
 DEFECT_INFO = {
-    "Missing_hole": "A required drill hole/via is absent on the PCB substrate.",
-    "Mouse_bite": "Small indentations along the edge of a copper trace caused by improper depaneling.",
-    "Open_circuit": "A break or gap in a conductive copper trace preventing electrical continuity.",
-    "Short": "Unintended copper bridge connecting two adjacent conductive tracks.",
-    "Spur": "Unwanted sharp copper protrusion extending from a trace.",
-    "Spurious_copper": "Isolated patch of excess copper left behind during the etching process."
+    "missing_hole": "A required drill hole/via is absent on the PCB substrate.",
+    "mouse_bite": "Small indentations along the edge of a copper trace caused by improper depaneling.",
+    "open_circuit": "A break or gap in a conductive copper trace preventing electrical continuity.",
+    "short": "Unintended copper bridge connecting two adjacent conductive tracks.",
+    "spur": "Unwanted sharp copper protrusion extending from a trace.",
+    "spurious_copper": "Isolated patch of excess copper left behind during the etching process."
 }
 
 @st.cache_resource
-def load_trained_model():
-    return tf.keras.models.load_model("pcb_defect_cnn.h5")
+def load_yolo_model():
+    return YOLO("best_pcb_yolo.pt")
 
-def preprocess_image(pil_image):
-    img = np.array(pil_image.convert("RGB"))
-    # Apply identical preprocessing used during training
-    denoised = cv2.GaussianBlur(img, (3, 3), 0)
-    resized = cv2.resize(denoised, (IMG_SIZE, IMG_SIZE))
-    normalized = resized.astype("float32") / 255.0
-    return np.expand_dims(normalized, axis=0), denoised
-
-# Header Section
-st.title("🔍 AI-Based PCB Defect Detection System")
-st.markdown("**Automated Visual Inspection & Real-Time Defect Classification using Convolutional Neural Networks (CNN)**")
+st.title("🔍 AI-Based PCB Defect Detection System (YOLOv8)")
+st.markdown("**Real-Time Automated Visual Inspection & Defect Localization using YOLOv8**")
 st.divider()
 
-# Sidebar Info
 st.sidebar.header("Project Details")
 st.sidebar.write("**Department:** Electronics & Communication Engineering")
 st.sidebar.write("**Institute:** Dadi Institute of Engineering & Technology")
-st.sidebar.subheader("Detectable Defect Classes")
-for c in CLASSES:
-    st.sidebar.markdown(f"- `{c.replace('_', ' ')}`")
+st.sidebar.write("**Model Architecture:** YOLOv8 (Object Detection)")
+conf_threshold = st.sidebar.slider("Detection Confidence Threshold", 0.10, 0.90, 0.25, 0.05)
 
-# Load Model
 try:
-    model = load_trained_model()
-except Exception as e:
-    st.error("Model file `pcb_defect_cnn.h5` not found! Please run `python train_pcb_model.py` first.")
+    model = load_yolo_model()
+except Exception:
+    st.error("Model file `best_pcb_yolo.pt` not found! Train your YOLOv8 model first and upload `best_pcb_yolo.pt` to GitHub.")
     st.stop()
 
-# Upload Image Section
-uploaded_file = st.file_uploader("Upload a PCB Image for Inspection (JPG / PNG)", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Upload a PCB Image for Defect Detection (JPG / PNG)", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    
-    # Run Preprocessing & Inference
-    start_time = time.time()
-    input_tensor, processed_preview = preprocess_image(image)
-    predictions = model.predict(input_tensor)[0]
-    inference_time_ms = (time.time() - start_time) * 1000
-    
-    predicted_idx = np.argmax(predictions)
-    predicted_class = CLASSES[predicted_idx]
-    confidence = predictions[predicted_idx] * 100
+    image = Image.open(uploaded_file).convert("RGB")
+    img_np = np.array(image)
 
-    # Display Results in Two Columns
+    # Noise removal preprocessing before YOLOv8 inference
+    denoised_img = cv2.GaussianBlur(img_np, (3, 3), 0)
+
+    start_time = time.time()
+    results = model.predict(source=denoised_img, conf=conf_threshold)
+    inference_ms = (time.time() - start_time) * 1000
+
+    annotated_bgr = results[0].plot()
+    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
+
     col1, col2 = st.columns(2)
-    
     with col1:
-        st.subheader("Uploaded PCB Image")
+        st.subheader("Original PCB Image")
         st.image(image, use_container_width=True)
-        
+
     with col2:
-        st.subheader("Inspection Diagnostics")
-        st.error(f"**Detected Defect:** {predicted_class.replace('_', ' ')}")
-        
-        m1, m2 = st.columns(2)
-        m1.metric("Confidence Score", f"{confidence:.2f}%")
-        m2.metric("Inference Time", f"{inference_time_ms:.1f} ms")
-        
-        st.info(f"**Description:** {DEFECT_INFO[predicted_class]}")
-        
-        st.subheader("Class Probability Breakdown")
-        prob_dict = {CLASSES[i].replace('_', ' '): float(predictions[i]) for i in range(len(CLASSES))}
-        st.bar_chart(prob_dict)
+        st.subheader("YOLOv8 Detected Defects (Bounding Boxes)")
+        st.image(annotated_rgb, use_container_width=True)
+
+    st.divider()
+    boxes = results[0].boxes
+    m1, m2 = st.columns(2)
+    m1.metric("Total Defects Localized", len(boxes))
+    m2.metric("Inference Speed", f"{inference_ms:.1f} ms")
+
+    if len(boxes) == 0:
+        st.success("No defects detected above the selected confidence threshold.")
+    else:
+        st.subheader("Detected Defect Breakdown")
+        for idx, box in enumerate(boxes, start=1):
+            cls_id = int(box.cls[0])
+            cls_name = model.names[cls_id]
+            conf = float(box.conf[0]) * 100
+            desc = DEFECT_INFO.get(cls_name.lower(), "Manufacturing defect detected on PCB trace.")
+            st.warning(f"**#{idx} — {cls_name.replace('_', ' ').title()}** ({conf:.1f}% confidence): {desc}")
