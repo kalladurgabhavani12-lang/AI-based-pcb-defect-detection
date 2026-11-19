@@ -23,10 +23,28 @@ st.title("🔍 AI-Based PCB Defect Detection System (YOLOv8)")
 st.markdown("**Real-Time Automated Visual Inspection & Defect Localization using YOLOv8**")
 st.divider()
 
+# Sidebar Project & Team Details
 st.sidebar.header("Project Details")
 st.sidebar.write("**Department:** Electronics & Communication Engineering")
 st.sidebar.write("**Institute:** Dadi Institute of Engineering & Technology")
 st.sidebar.write("**Model Architecture:** YOLOv8 (Object Detection)")
+
+st.sidebar.divider()
+st.sidebar.subheader("Project Batch Members")
+st.sidebar.markdown("""
+1. **K. Durga Bhavani** – `23U41A0429`
+2. **G. Varshini** – `23U41A0421`
+3. **A. Anand** – `23U41A0403`
+4. **B. Girish Kumar** – `23U41A0463`
+""")
+
+st.sidebar.markdown("""
+- **Project Guide:** Dr. Putcha Poorna Priya
+- **R&D Coordinator:** Dr. Ch. Ramana Babu
+- **HoD:** Dr. Putcha Poorna Priya
+""")
+
+st.sidebar.divider()
 conf_threshold = st.sidebar.slider("Detection Confidence Threshold", 0.10, 0.90, 0.25, 0.05)
 
 try:
